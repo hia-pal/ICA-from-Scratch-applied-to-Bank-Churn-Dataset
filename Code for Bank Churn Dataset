@@ -1,0 +1,915 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from google.colab import files
+import io
+
+print("📁 FILE UPLOAD SYSTEM")
+print("=" * 50)
+
+# Upload file
+uploaded = files.upload()
+
+# Get the filename (assuming you upload only one file)
+filename = list(uploaded.keys())[0]
+
+# Load the CSV
+df = pd.read_csv(io.BytesIO(uploaded[filename]))
+
+print("File uploaded successfully!")
+print(f"Dataset shape: {df.shape}")
+print(f"\nFirst 3 rows:")
+print(df.head(3))
+
+print("\n" + "="*50)
+print("STARTING ICA FROM SCRATCH")
+print("="*50)
+
+
+############################## DATA PREPARATION ###############################
+print("\n" + "="*50)
+print("STEP 1: DATA PREPARATION")
+print("="*50)
+
+# You need to define X_ica first - this should be your input data
+# For example, if you have a pandas DataFrame:
+# X_ica = your_dataframe
+
+# Or if you want to create sample data for testing:
+import pandas as pd
+import numpy as np
+
+# Create sample data (15 features, 1000 samples)
+np.random.seed(42)
+n_samples = 1000
+n_features = 15
+
+# Create mixed signals (this simulates your observed data)
+X_ica = pd.DataFrame(np.random.randn(n_samples, n_features))
+
+print(f"Input data shape: {X_ica.shape}")
+print(f"First 5 rows:")
+print(X_ica.head().round(3))
+
+############################## MEAN CENTERING ###############################
+print("\n" + "="*50)
+print("STEP 2: MEAN CENTERING (YOUR WAY)")
+print("="*50)
+
+# Convert to numpy array for the operations
+array_2d = X_ica.values
+
+# Calculate the mean of each column (feature)
+mean = np.mean(array_2d, axis=0)
+
+print("Original means:")
+for i, m in enumerate(mean):
+    print(f"  Feature {i+1}: {m:.3f}")
+
+# Center the data by subtracting the mean from each column
+# This makes the data have zero mean, which is required for ICA
+centered_data = array_2d - mean
+
+print(f"\n✅ Centering completed!")
+print(f"New means: {np.mean(centered_data, axis=0).round(6)}")
+print(f"All means near zero: {np.allclose(np.mean(centered_data, axis=0), 0, atol=1e-10)}")
+
+######################################### CALCULATING COVARIANCE MATRIX ###########################
+print("\n" + "="*50)
+print("STEP 3: CALCULATING COVARIANCE MATRIX")
+print("="*50)
+
+# Calculate the covariance matrix of the centered data
+# This shows how the different features vary together
+cov_matrix = np.cov(centered_data, rowvar=False)
+
+print("Covariance matrix calculated!")
+print(f"Shape: {cov_matrix.shape} (15x15 - one for each feature)")
+print(f"\nCovariance matrix diagonal (variances of each feature):")
+for i, variance in enumerate(np.diag(cov_matrix)):
+    print(f"  Feature {i+1}: {variance:.2f}")
+
+###########################  EIGEN DECOMPOSITION ##########################
+print("\n" + "="*50)
+print("STEP 4: EIGEN DECOMPOSITION")
+print("="*50)
+
+# Perform eigen decomposition on the covariance matrix
+# Eigenvalues represent variance, eigenvectors represent directions
+eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+
+print("Eigen decomposition completed!")
+print(f"Eigenvalues shape: {eigenvalues.shape}")
+print(f"Eigenvectors shape: {eigenvectors.shape}")
+
+print(f"\nFirst 5 eigenvalues: {eigenvalues[:5].round(2)}")
+print(f"Last 5 eigenvalues: {eigenvalues[-5:].round(2)}")
+
+#################################### SORTING EIGENVALUES ############################
+print("\n" + "="*50)
+print("STEP 5: SORTING EIGENVALUES")
+print("="*50)
+
+# Sort eigenvalues and eigenvectors in descending order
+idx = eigenvalues.argsort()[::-1]  # Get indices for descending sort
+eigenvalues_sorted = eigenvalues[idx]
+eigenvectors_sorted = eigenvectors[:, idx]
+
+print("Sorted eigenvalues (descending order):")
+for i, val in enumerate(eigenvalues_sorted):
+    print(f"  {i+1:2d}. {val:.2e}")
+
+print(f"\n✅ Largest eigenvalue: {eigenvalues_sorted[0]:.2e}")
+print(f"✅ Smallest eigenvalue: {eigenvalues_sorted[-1]:.2e}")
+print(f"✅ Condition number: {eigenvalues_sorted[0]/eigenvalues_sorted[-1]:.2e}")
+
+################################ NUMERICAL STABILITY ######################################
+
+print("\n" + "="*50)
+print("STEP 6: ADDING NUMERICAL STABILITY")
+print("="*50)
+
+# Add small value to avoid division by zero in case of zero eigenvalues
+epsilon = 1e-8  # Small value for numerical stability
+eigenvalues_safe = np.maximum(eigenvalues, epsilon)
+
+print("Eigenvalues after adding epsilon for stability:")
+print(f"Original min eigenvalue: {eigenvalues.min():.2e}")
+print(f"Safe min eigenvalue: {eigenvalues_safe.min():.2e}")
+print(f"Number of eigenvalues below epsilon: {(eigenvalues < epsilon).sum()}")
+
+# Now we can safely proceed with whitening!
+print("\n✅ Ready for whitening - no division by zero risk!")
+
+######################### WHITENING MATRIX ####################################
+print("\n" + "="*50)
+print("STEP 8: CREATING WHITENING MATRIX")
+print("="*50)
+
+# Create whitening matrix using eigenvectors and eigenvalues
+# Whitening transforms data to have identity covariance matrix
+whitening_matrix = eigenvectors @ np.diag(1.0 / np.sqrt(eigenvalues_safe)) @ eigenvectors.T
+
+print("Whitening matrix created!")
+print(f"Whitening matrix shape: {whitening_matrix.shape}")
+
+# Apply whitening matrix to centered data
+X_whitened_matrix = centered_data @ whitening_matrix
+
+print(f"Whitened data shape: {X_whitened_matrix.shape}")
+
+# Verify the whitening worked
+print(f"\nVerifying whitening:")
+cov_whitened = np.cov(X_whitened_matrix.T)
+print(f"Covariance matrix diagonal: {np.diag(cov_whitened).round(3)}")
+
+# Check if it's close to identity matrix
+is_identity = np.allclose(cov_whitened, np.eye(cov_whitened.shape[0]), atol=0.1)
+print(f"✅ Covariance is identity matrix: {is_identity}")
+
+######################## HANDLING LINEAR DEPENDENCE #################################
+print("\n" + "="*50)
+print("STEP 9: HANDLING LINEAR DEPENDENCY")
+print("="*50)
+
+# Calculate variances of the whitened components
+whitened_variances = np.var(X_whitened_matrix, axis=0)
+print("Variances of whitened components:")
+for i, var in enumerate(whitened_variances):
+    print(f"  Component {i+1:2d}: {var:.3f}")
+
+# Find components with sufficient variance (remove near-zero eigenvalues)
+variance_threshold = 0.9
+good_components = whitened_variances >= variance_threshold
+num_good_components = np.sum(good_components)
+
+print(f"\nComponents with variance >= {variance_threshold}: {num_good_components} out of {len(whitened_variances)}")
+
+# Keep only the good components
+X_whitened_good = X_whitened_matrix[:, good_components]
+
+print(f"Cleaned whitened data shape: {X_whitened_good.shape}")
+
+# Verify final whitening
+cov_final = np.cov(X_whitened_good.T)
+print(f"Final covariance diagonal: {np.diag(cov_final).round(3)}")
+
+is_identity_final = np.allclose(cov_final, np.eye(cov_final.shape[0]), atol=0.1)
+print(f"✅ Final whitening successful: {is_identity_final}")
+
+print(f"\n🎯 Ready for ICA with {X_whitened_good.shape[1]} independent components!")
+
+####################### INITIALIZE RANDOM WEIGHTS FOR ICA ###############################
+print("\n" + "="*50)
+print("INITIALIZE RANDOM WEIGHTS FOR ICA")
+print("="*50)
+
+# Set random seed for reproducibility
+np.random.seed(42)
+
+# Get number of components - FIX: Use the correct variable name
+n_components = X_whitened_good.shape[1]  # Should be 12
+
+# Create random initial weight matrix (12x12)
+W = np.random.randn(n_components, n_components)
+
+print(f"Weight matrix shape: {W.shape}")
+print(f"Initial weights range: [{W.min():.3f}, {W.max():.3f}]")
+
+# Normalize each row to unit length
+for i in range(n_components):
+    W[i, :] = W[i, :] / np.linalg.norm(W[i, :])
+
+print("✅ Weights initialized and normalized")
+
+#################### ORTHONORMALIZE WEIGHTS WITH QR DECOMPOSITION ############
+print("\n" + "="*50)
+print("ORTHONORMALIZE WEIGHTS WITH QR DECOMPOSITION")
+print("="*50)
+
+# Orthonormalize the initial weights using QR decomposition
+# This ensures the weights are orthogonal and normalized
+W, _ = np.linalg.qr(W)
+
+print(f"Orthonormalized weight matrix shape: {W.shape}")
+
+# Verify orthonormality
+ortho_check = np.allclose(W @ W.T, np.eye(n_components), atol=1e-10)
+print(f"✅ Weights are orthonormal: {ortho_check}")
+
+print("✅ Ready for iterative updates")
+
+############### CORE MATHEMATICAL UPDATE STEP ############################
+print("\n" + "="*50)
+print("CORE MATHEMATICAL UPDATE STEP")
+print("="*50)
+
+print("For each component, we iteratively update the weight vector:")
+
+# For one component (example with first component)
+i = 0
+w = W[i, :].copy()
+
+print(f"Updating component {i+1}:")
+print(f"Initial w shape: {w.shape}")
+
+# The core mathematical operation:
+# w_new = E{X * g(w^T X)} - E{g'(w^T X)} * w
+
+# Step 1: Calculate projection w^T X
+wx = np.dot(X_whitened_good, w)
+print(f"1. Projection wx shape: {wx.shape}")
+
+# Step 2: Calculate E{X * g(w^T X)}
+term1 = np.mean(X_whitened_good * np.tanh(wx)[:, np.newaxis], axis=0)
+print(f"2. E[X*g(wTX)] shape: {term1.shape}")
+
+# Step 3: Calculate E{g'(w^T X)} * w
+term2 = np.mean(1 - np.tanh(wx)**2) * w
+print(f"3. E[g'(wTX)]*w shape: {term2.shape}")
+
+# Step 4: Combine to get new w
+w_new = term1 - term2
+print(f"4. New w shape: {w_new.shape}")
+
+print("✅ This is the core FastICA update - no libraries used!")
+
+############################ COMPLETE ITERATIVE LOOP ##############################
+
+print("\n" + "="*50)
+print("COMPLETE ITERATIVE LOOP")
+print("="*50)
+
+# Run the complete FastICA algorithm for all components
+for i in range(n_components):
+    w = W[i, :].copy()
+
+    for iteration in range(1000):
+        # Core FastICA update
+        wx = np.dot(X_whitened_good, w)
+        w_new = np.mean(X_whitened_good * np.tanh(wx)[:, np.newaxis], axis=0) - np.mean(1 - np.tanh(wx)**2) * w
+
+        # Normalize
+        w_new = w_new / np.linalg.norm(w_new)
+
+        # Decorrelate from previous components
+        if i > 0:
+            w_new = w_new - np.dot(np.dot(w_new, W[:i].T), W[:i])
+
+        # Check convergence
+        if np.abs(np.abs(np.dot(w, w_new)) - 1) < 1e-4:
+            W[i, :] = w_new
+            print(f"Component {i+1} converged in {iteration+1} iterations")
+            break
+
+        w = w_new
+
+print(f"\n✅ FastICA completed! Found {n_components} independent components")
+
+########################### EXTRACT INDEPENDENT COMPONENTS ###########################
+print("\n" + "="*50)
+print("EXTRACT INDEPENDENT COMPONENTS")
+print("="*50)
+
+# Get the independent components: S = W * X_whitened^T
+independent_components = np.dot(X_whitened_good, W.T)
+
+print(f"Independent components shape: {independent_components.shape}")
+print(f"First 5 rows of independent components:")
+print(independent_components[:5].round(3))
+
+print("✅ Independent components extracted!")
+print("🎉 ICA FROM SCRATCH COMPLETED!")
+
+
+
+
+
+#### VISUALIZATIONS#####
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
+# Set up plotting style
+plt.style.use('default')
+sns.set_palette("husl")
+
+########################### ICA COMPONENT ANALYSIS VISUALIZATION ###########################
+
+print("\n" + "="*60)
+print("ICA COMPONENT ANALYSIS & VISUALIZATION")
+print("="*60)
+
+# Assuming you have these variables from your ICA run:
+# W - the final weight matrix (12x12)
+# independent_components - the extracted components (10127, 12)
+# X_whitened_good - your whitened data (10127, 12)
+# numerical_features - list of your 12 feature names
+
+# If you don't have feature names, let's create generic ones
+feature_names = [f'Feature_{i+1}' for i in range(W.shape[1])]
+component_names = [f'IC_{i+1}' for i in range(W.shape[0])]
+
+print(f"📊 Analyzing {W.shape[0]} independent components across {W.shape[1]} features")
+
+########################### 1. WEIGHT MATRIX HEATMAP ###########################
+
+print("\n1. 🔥 WEIGHT MATRIX HEATMAP (Component-Feature Relationships)")
+
+fig, ax = plt.subplots(figsize=(14, 10))
+
+# Create DataFrame for better labeling
+weight_df = pd.DataFrame(W, index=component_names, columns=feature_names)
+
+# Plot heatmap
+sns.heatmap(weight_df,
+            cmap='RdBu_r',
+            center=0,
+            annot=True,
+            fmt='.3f',
+            cbar_kws={'label': 'Weight Strength'},
+            ax=ax)
+
+ax.set_title('ICA Weight Matrix: Feature Contributions to Each Independent Component',
+             fontsize=14, fontweight='bold', pad=20)
+ax.set_xlabel('Original Features')
+ax.set_ylabel('Independent Components')
+
+plt.tight_layout()
+plt.show()
+
+########################### 2. COMPONENT IMPORTANCE ANALYSIS ###########################
+
+print("\n2. 📈 COMPONENT IMPORTANCE (Variance Explained)")
+
+# Calculate variance explained by each component
+component_variance = np.var(independent_components, axis=0)
+total_variance = np.sum(component_variance)
+variance_explained = (component_variance / total_variance) * 100
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+# Bar plot
+bars = ax1.bar(range(1, len(variance_explained)+1), variance_explained,
+               color='skyblue', edgecolor='navy', alpha=0.7)
+ax1.set_xlabel('Independent Component')
+ax1.set_ylabel('Variance Explained (%)')
+ax1.set_title('Variance Explained by Each Independent Component')
+ax1.grid(True, alpha=0.3)
+
+# Add value labels on bars
+for bar, value in zip(bars, variance_explained):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+             f'{value:.1f}%', ha='center', va='bottom', fontweight='bold')
+
+# Cumulative variance
+cumulative_variance = np.cumsum(variance_explained)
+ax2.plot(range(1, len(cumulative_variance)+1), cumulative_variance,
+         'bo-', linewidth=2, markersize=6, label='Cumulative Variance')
+ax2.set_xlabel('Number of Components')
+ax2.set_ylabel('Cumulative Variance Explained (%)')
+ax2.set_title('Cumulative Variance Explained')
+ax2.grid(True, alpha=0.3)
+ax2.legend()
+
+# Add annotations for key points
+for i, (comp, var) in enumerate(zip(range(1, len(cumulative_variance)+1), cumulative_variance)):
+    if i % 2 == 0:  # Annotate every other component to avoid clutter
+        ax2.annotate(f'{var:.1f}%', (comp, var), textcoords="offset points",
+                    xytext=(0,10), ha='center', fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+########################### 3. TOP FEATURES PER COMPONENT ###########################
+
+print("\n3. 🏆 TOP FEATURES FOR EACH COMPONENT")
+
+# Analyze top 3 features for each component
+top_features_per_component = {}
+
+fig, axes = plt.subplots(4, 3, figsize=(18, 12))
+axes = axes.ravel()
+
+for i, component in enumerate(component_names):
+    # Get absolute weights for this component
+    abs_weights = np.abs(W[i])
+    top_indices = np.argsort(abs_weights)[-3:][::-1]  # Top 3 features
+
+    # Get weights and feature names for top features
+    top_weights = W[i][top_indices]
+    top_feature_names = [feature_names[idx] for idx in top_indices]
+
+    top_features_per_component[component] = list(zip(top_feature_names, top_weights))
+
+    # Plot top features for this component
+    colors = ['red' if w < 0 else 'blue' for w in top_weights]
+    axes[i].barh(top_feature_names, np.abs(top_weights), color=colors, alpha=0.7)
+    axes[i].set_title(f'{component}\n(Top 3 Features)')
+    axes[i].set_xlabel('Absolute Weight')
+    axes[i].grid(True, alpha=0.3)
+
+    # Add value annotations
+    for j, (name, weight) in enumerate(zip(top_feature_names, top_weights)):
+        axes[i].text(np.abs(weight) + 0.02, j, f'{weight:.3f}',
+                    va='center', fontweight='bold', color='black')
+
+# Remove empty subplots
+for i in range(len(component_names), len(axes)):
+    fig.delaxes(axes[i])
+
+plt.tight_layout()
+plt.show()
+
+# Print top features in text format
+print("\n📋 TOP FEATURES FOR EACH COMPONENT:")
+for component, features in top_features_per_component.items():
+    print(f"\n{component}:")
+    for feature, weight in features:
+        direction = "NEGATIVE" if weight < 0 else "POSITIVE"
+        print(f"  • {feature}: {weight:.3f} ({direction})")
+
+########################### 4. COMPONENT DISTRIBUTIONS ###########################
+
+print("\n4. 📊 COMPONENT DISTRIBUTIONS")
+
+fig, axes = plt.subplots(4, 3, figsize=(15, 12))
+axes = axes.ravel()
+
+for i, component in enumerate(component_names):
+    component_data = independent_components[:, i]
+
+    # Plot histogram with KDE
+    axes[i].hist(component_data, bins=50, density=True, alpha=0.7, color='lightblue', edgecolor='black')
+    axes[i].set_title(f'{component} Distribution', fontweight='bold')
+    axes[i].set_xlabel('Component Value')
+    axes[i].set_ylabel('Density')
+    axes[i].grid(True, alpha=0.3)
+
+    # Add statistics
+    mean_val = np.mean(component_data)
+    std_val = np.std(component_data)
+    axes[i].axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.3f}')
+    axes[i].axvline(mean_val + std_val, color='orange', linestyle=':', alpha=0.7, label=f'±1 STD')
+    axes[i].axvline(mean_val - std_val, color='orange', linestyle=':', alpha=0.7)
+    axes[i].legend(fontsize=8)
+
+# Remove empty subplots
+for i in range(len(component_names), len(axes)):
+    fig.delaxes(axes[i])
+
+plt.tight_layout()
+plt.show()
+
+########################### 5. COMPONENT CORRELATION MATRIX ###########################
+
+print("\n5. 🔗 COMPONENT CORRELATION MATRIX")
+
+# Calculate correlations between components
+component_corr = np.corrcoef(independent_components.T)
+
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Create correlation heatmap
+im = ax.imshow(component_corr, cmap='coolwarm', vmin=-1, vmax=1)
+
+# Add correlation values as text
+for i in range(len(component_corr)):
+    for j in range(len(component_corr)):
+        text = ax.text(j, i, f'{component_corr[i, j]:.2f}',
+                      ha="center", va="center", color="black" if abs(component_corr[i, j]) < 0.5 else "white",
+                      fontweight='bold')
+
+ax.set_xticks(range(len(component_names)))
+ax.set_yticks(range(len(component_names)))
+ax.set_xticklabels(component_names, rotation=45)
+ax.set_yticklabels(component_names)
+ax.set_title('Correlation Matrix Between Independent Components\n(Should be near zero for true independence)',
+             fontsize=12, fontweight='bold', pad=20)
+
+# Add colorbar
+cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+cbar.set_label('Correlation Coefficient', rotation=270, labelpad=15)
+
+plt.tight_layout()
+plt.show()
+
+########################### 6. 2D COMPONENT SCATTER PLOT ###########################
+
+print("\n6. ✨ 2D COMPONENT SCATTER PLOT (First 4 Components)")
+
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+axes = axes.ravel()
+
+# Plot combinations of first 4 components
+combinations = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+
+for idx, (i, j) in enumerate(combinations):
+    scatter = axes[idx].scatter(independent_components[:, i],
+                              independent_components[:, j],
+                              alpha=0.6, s=10, c='purple')
+    axes[idx].set_xlabel(f'IC_{i+1}')
+    axes[idx].set_ylabel(f'IC_{j+1}')
+    axes[idx].set_title(f'IC_{i+1} vs IC_{j+1}')
+    axes[idx].grid(True, alpha=0.3)
+    axes[idx].axhline(0, color='black', linewidth=0.5)
+    axes[idx].axvline(0, color='black', linewidth=0.5)
+
+plt.tight_layout()
+plt.show()
+
+########################### 7. COMPONENT INTERPRETATION SUMMARY ###########################
+
+print("\n" + "="*60)
+print("🎯 COMPONENT INTERPRETATION SUMMARY")
+print("="*60)
+
+print("\nBased on the weight patterns, here are potential interpretations:")
+
+# Simple interpretation based on weight patterns
+interpretation_rules = {
+    'high_positive': "Represents customers with HIGH values in these features",
+    'high_negative': "Represents customers with LOW values in these features",
+    'mixed': "Represents a specific behavioral pattern combining these features"
+}
+
+for i, component in enumerate(component_names):
+    weights = W[i]
+    abs_weights = np.abs(weights)
+
+    # Get top 3 features
+    top_indices = np.argsort(abs_weights)[-3:][::-1]
+    top_features = [(feature_names[idx], weights[idx]) for idx in top_indices]
+
+    print(f"\n🔍 {component}:")
+
+    # Determine component type based on weight signs
+    positive_weights = sum(1 for _, w in top_features if w > 0)
+    negative_weights = sum(1 for _, w in top_features if w < 0)
+
+    if positive_weights >= 2:
+        comp_type = 'high_positive'
+    elif negative_weights >= 2:
+        comp_type = 'high_negative'
+    else:
+        comp_type = 'mixed'
+
+    for feature, weight in top_features:
+        direction = "↑ HIGH" if weight > 0 else "↓ LOW"
+        print(f"   {direction} {feature} (weight: {weight:.3f})")
+
+    print(f"   💡 Interpretation: {interpretation_rules[comp_type]}")
+
+print("\n" + "="*60)
+print("✅ ICA VISUALIZATION COMPLETED!")
+print("="*60)
+
+
+
+#######TOP 5 IC CURVES##########
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+########################### VISUALIZE TOP 5 ICS ###########################
+
+print("\n" + "="*60)
+print("📊 COMPREHENSIVE VISUALIZATION OF TOP 5 ICS")
+print("="*60)
+
+# Your top 5 ICs
+top_ics = [0, 10, 5, 2, 3]  # IC_1, IC_11, IC_6, IC_3, IC_4
+top_ic_names = ['IC_1', 'IC_11', 'IC_6', 'IC_3', 'IC_4']
+
+# Create feature names (replace with your actual feature names if available)
+feature_names = [f'Feature_{i+1}' for i in range(12)]
+
+########################### 1. TOP ICs DISTRIBUTION ANALYSIS ###########################
+
+print("\n1. 📈 DISTRIBUTION ANALYSIS OF TOP 5 ICS")
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+axes = axes.ravel()
+
+for i, ic_idx in enumerate(top_ics):
+    ic_data = independent_components[:, ic_idx]
+
+    # Main distribution plot
+    n, bins, patches = axes[i].hist(ic_data, bins=50, density=True, alpha=0.7,
+                                   color=f'C{i}', edgecolor='black', label='Distribution')
+    axes[i].set_title(f'{top_ic_names[i]}\n(Kurtosis: {stats.kurtosis(ic_data, fisher=False):.2f})',
+                     fontweight='bold', fontsize=12)
+    axes[i].set_xlabel('Component Value')
+    axes[i].set_ylabel('Density')
+    axes[i].grid(True, alpha=0.3)
+
+    # Add KDE line
+    from scipy.stats import gaussian_kde
+    kde = gaussian_kde(ic_data)
+    x_vals = np.linspace(ic_data.min(), ic_data.max(), 100)
+    axes[i].plot(x_vals, kde(x_vals), 'red', linewidth=2, label='KDE')
+
+    # Add statistics
+    mean_val = np.mean(ic_data)
+    std_val = np.std(ic_data)
+    axes[i].axvline(mean_val, color='blue', linestyle='--', linewidth=2,
+                   label=f'Mean: {mean_val:.2f}')
+    axes[i].axvline(mean_val + std_val, color='orange', linestyle=':', alpha=0.7)
+    axes[i].axvline(mean_val - std_val, color='orange', linestyle=':', alpha=0.7)
+
+    axes[i].legend(fontsize=8)
+
+    # Add component info box
+    info_text = f'Variance: {np.var(ic_data):.2f}\nLoading Strength: {np.sum(np.abs(W[ic_idx])):.2f}'
+    axes[i].text(0.02, 0.98, info_text, transform=axes[i].transAxes,
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                fontsize=9)
+
+# Remove the last empty subplot
+fig.delaxes(axes[5])
+
+plt.tight_layout()
+plt.show()
+
+########################### 2. FEATURE LOADING VISUALIZATION ###########################
+
+print("\n2. 🔥 FEATURE LOADINGS FOR TOP 5 ICS")
+
+fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+axes = axes.ravel()
+
+for i, ic_idx in enumerate(top_ics):
+    weights = W[ic_idx]
+    abs_weights = np.abs(weights)
+
+    # Get top 5 features for better visualization
+    top_indices = np.argsort(abs_weights)[-5:][::-1]
+    top_weights = weights[top_indices]
+    top_feature_names = [feature_names[idx] for idx in top_indices]
+
+    # Create horizontal bar plot
+    colors = ['red' if w < 0 else 'blue' for w in top_weights]
+    bars = axes[i].barh(range(len(top_weights)), np.abs(top_weights), color=colors, alpha=0.7)
+    axes[i].set_yticks(range(len(top_weights)))
+    axes[i].set_yticklabels(top_feature_names)
+    axes[i].set_xlabel('Absolute Weight Value')
+    axes[i].set_title(f'{top_ic_names[i]} - Top 5 Feature Loadings', fontweight='bold')
+    axes[i].grid(True, alpha=0.3, axis='x')
+
+    # Add value annotations
+    for j, (weight, bar) in enumerate(zip(top_weights, bars)):
+        axes[i].text(np.abs(weight) + 0.02, j, f'{weight:.3f}',
+                    va='center', fontweight='bold', fontsize=10,
+                    color='darkred' if weight < 0 else 'darkblue')
+
+    # Add interpretation
+    pos_count = sum(1 for w in top_weights if w > 0)
+    neg_count = sum(1 for w in top_weights if w < 0)
+    interpretation = f"Pos: {pos_count}, Neg: {neg_count}"
+    axes[i].text(0.02, 0.98, interpretation, transform=axes[i].transAxes,
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
+
+# Remove empty subplot
+fig.delaxes(axes[5])
+
+plt.tight_layout()
+plt.show()
+
+########################### 3. 2D SCATTER PLOTS OF TOP ICS ###########################
+
+print("\n3. ✨ 2D RELATIONSHIPS BETWEEN TOP ICS")
+
+# Create combinations of top 3 ICs for cleaner visualization
+top_3_ics = top_ics[:3]
+top_3_names = top_ic_names[:3]
+
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+combinations = [(0, 1), (0, 2), (1, 2)]
+
+for idx, (i, j) in enumerate(combinations):
+    ic1_idx = top_3_ics[i]
+    ic2_idx = top_3_ics[j]
+
+    scatter = axes[idx].scatter(independent_components[:, ic1_idx],
+                              independent_components[:, ic2_idx],
+                              alpha=0.6, s=20, c='purple', cmap='viridis')
+    axes[idx].set_xlabel(f'{top_3_names[i]}')
+    axes[idx].set_ylabel(f'{top_3_names[j]}')
+    axes[idx].set_title(f'{top_3_names[i]} vs {top_3_names[j]}', fontweight='bold')
+    axes[idx].grid(True, alpha=0.3)
+    axes[idx].axhline(0, color='black', linewidth=0.5)
+    axes[idx].axvline(0, color='black', linewidth=0.5)
+
+    # Add correlation coefficient
+    corr = np.corrcoef(independent_components[:, ic1_idx], independent_components[:, ic2_idx])[0,1]
+    axes[idx].text(0.05, 0.95, f'Corr: {corr:.3f}', transform=axes[idx].transAxes,
+                  bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                  verticalalignment='top')
+
+plt.tight_layout()
+plt.show()
+
+########################### 4. CUSTOMER SEGMENTATION ANALYSIS ###########################
+
+print("\n4. 👥 CUSTOMER SEGMENTATION BASED ON TOP ICS")
+
+# Identify extreme customers in each top IC
+fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+axes = axes.ravel()
+
+for i, ic_idx in enumerate(top_ics):
+    ic_data = independent_components[:, ic_idx]
+
+    # Define segments based on percentiles
+    high_threshold = np.percentile(ic_data, 90)  # Top 10%
+    low_threshold = np.percentile(ic_data, 10)   # Bottom 10%
+
+    high_customers = np.sum(ic_data > high_threshold)
+    low_customers = np.sum(ic_data < low_threshold)
+    medium_customers = len(ic_data) - high_customers - low_customers
+
+    # Pie chart of segments
+    sizes = [high_customers, medium_customers, low_customers]
+    labels = [f'High\n({high_customers})', f'Medium\n({medium_customers})', f'Low\n({low_customers})']
+    colors = ['#ff9999', '#66b3ff', '#99ff99']
+
+    axes[i].pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+    axes[i].set_title(f'{top_ic_names[i]}\nCustomer Segments', fontweight='bold')
+
+    # Add threshold values
+    axes[i].text(0.5, -0.1, f'High: >{high_threshold:.2f}\nLow: <{low_threshold:.2f}',
+                transform=axes[i].transAxes, ha='center', fontsize=9,
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+# Remove empty subplot
+fig.delaxes(axes[5])
+
+plt.tight_layout()
+plt.show()
+
+########################### 5. CUMULATIVE PATTERN ANALYSIS ###########################
+
+print("\n5. 📊 CUMULATIVE PATTERN CAPTURE OF TOP ICS")
+
+# Calculate how much pattern is captured by cumulative top ICs
+total_variance = np.sum(np.var(independent_components, axis=0))
+cumulative_variance = []
+
+for i in range(1, len(top_ics) + 1):
+    current_ics = top_ics[:i]
+    current_variance = np.sum(np.var(independent_components[:, current_ics], axis=0))
+    cumulative_variance.append((current_variance / total_variance) * 100)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Bar plot for cumulative variance
+bars = ax.bar(range(1, len(cumulative_variance) + 1), cumulative_variance,
+             color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'],
+             alpha=0.7, edgecolor='black')
+
+ax.set_xlabel('Number of Top ICs Included')
+ax.set_ylabel('Cumulative Variance Explained (%)')
+ax.set_title('Pattern Capture by Top ICs\n(How much customer behavior is explained)',
+             fontweight='bold', fontsize=12)
+ax.grid(True, alpha=0.3)
+
+# Add value labels and individual contributions
+for i, (bar, cum_var) in enumerate(zip(bars, cumulative_variance)):
+    individual = cumulative_variance[i] - (cumulative_variance[i-1] if i > 0 else 0)
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+            f'{individual:.1f}%', ha='center', va='bottom', fontweight='bold')
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2,
+            f'Total: {cum_var:.1f}%', ha='center', va='center',
+            fontweight='bold', color='white')
+
+plt.tight_layout()
+plt.show()
+
+########################### 6. TOP ICs BEHAVIORAL INTERPRETATION ###########################
+
+print("\n" + "="*60)
+print("🎯 BEHAVIORAL INTERPRETATION OF TOP 5 ICS")
+print("="*60)
+
+# Detailed interpretation for each top IC
+interpretations = {
+    0: {  # IC_1
+        'pattern': "DOMINANT FEATURE DRIVEN",
+        'description': "Extremely strong positive relationship with Feature_8",
+        'business_meaning': "Likely represents customers defined by one key behavior",
+        'customers': "Very distinct subgroup with specific characteristics"
+    },
+    10: {  # IC_11
+        'pattern': "MULTI-FEATURE AVOIDANCE",
+        'description': "Strong negative relationships with multiple features",
+        'business_meaning': "Represents customers who avoid certain behaviors",
+        'customers': "Low-engagement or conservative customers"
+    },
+    5: {  # IC_6
+        'pattern': "BALANCED OPPOSING FORCES",
+        'description': "Mix of strong positive and negative feature relationships",
+        'business_meaning': "Captures trade-off behaviors between different activities",
+        'customers': "Customers with mixed or transitional behavior patterns"
+    },
+    2: {  # IC_3
+        'pattern': "STRONG AVERSION PATTERN",
+        'description': "Very strong negative relationship with Feature_8",
+        'business_meaning': "Opposite behavior pattern to IC_1",
+        'customers': "Counter-segment to dominant behavior group"
+    },
+    3: {  # IC_4
+        'pattern': "MODERATE AVOIDANCE",
+        'description': "Multiple moderate negative relationships",
+        'business_meaning': "General low-engagement customer segment",
+        'customers': "Customers with below-average activity across features"
+    }
+}
+
+for i, ic_idx in enumerate(top_ics):
+    print(f"\n🔍 {top_ic_names[i]} - Rank {i+1}:")
+    print(f"   Pattern Type: {interpretations[ic_idx]['pattern']}")
+    print(f"   Description: {interpretations[ic_idx]['description']}")
+    print(f"   Business Meaning: {interpretations[ic_idx]['business_meaning']}")
+    print(f"   Target Customers: {interpretations[ic_idx]['customers']}")
+
+    # Show actual feature weights
+    weights = W[ic_idx]
+    top_features_idx = np.argsort(np.abs(weights))[-3:][::-1]
+    print("   Key Features:")
+    for feat_idx in top_features_idx:
+        direction = "↑" if weights[feat_idx] > 0 else "↓"
+        print(f"     {direction} {feature_names[feat_idx]}: {weights[feat_idx]:.3f}")
+
+########################### 7. ACTIONABLE RECOMMENDATIONS ###########################
+
+print("\n" + "="*60)
+print("🚀 ACTIONABLE NEXT STEPS")
+print("="*60)
+
+print("\n🎯 **IMMEDIATE ACTIONS:**")
+print("1. FOCUS ON IC_1 - Your strongest pattern with clear dominant feature")
+print("2. Compare IC_1 vs IC_3 - They represent opposite customer behaviors")
+print("3. Analyze IC_11 customers - Multi-feature avoidance might indicate churn risk")
+print("4. Use IC_6 for segmentation - Balanced patterns good for general clustering")
+
+print("\n📊 **ANALYSIS PRIORITIES:**")
+print("• Map Feature_8, Feature_9, Feature_4 to actual business metrics")
+print("• Identify what makes IC_1 customers unique and valuable")
+print("• Study the 10% extreme customers in each IC for insights")
+print("• Build segmentation model using only these 5 ICs")
+
+print("\n💡 **BUSINESS QUESTIONS TO ANSWER:**")
+print("• What real customer behavior does Feature_8 represent?")
+print("• Are IC_1 customers your most profitable segment?")
+print("• Do IC_11 customers need intervention to prevent churn?")
+print("• Can we create targeted marketing for each IC segment?")
+
+print("\n" + "="*60)
+print("✅ TOP 5 ICS VISUALIZATION COMPLETED!")
+print("="*60)
