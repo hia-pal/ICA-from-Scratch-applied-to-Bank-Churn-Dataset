@@ -1,0 +1,135 @@
+import numpy as np
+
+array_mics = np.array([
+    [4.9, 6.3, 7.7],
+    [5.5, 7.1, 8.7],
+    [8.3, 10.3, 12.3]
+])
+
+# Step 1: Centering
+mean = np.mean(array_mics, axis=0) #down the columns
+centered_data = array_mics - mean
+
+# Step 2: Covariance
+cov_matrix = np.cov(centered_data, rowvar=False)
+#rowvar=False: Each column represents a variable/feature, each row represents an observation
+
+# Step 3: Eigen Decomposition
+eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)
+#np.linalg.eigh() is a specific eigenvalue decomposition function
+
+# Step 4: Add epsilon for safety
+epsilon = 1e-8
+eigenvalues_safe = np.maximum(eigenvalues, epsilon)
+
+# Step 5: Whitening
+whitening_matrix = eigenvectors @ np.diag(1.0 / np.sqrt(eigenvalues_safe)) @ eigenvectors.T
+whitened_data = centered_data @ whitening_matrix #matrix multiplication.
+
+#Step 6: Initialize random weights for ICA & #Step 7:Create random initial weight matrix
+
+np.random.seed(42)                                        # For reproducibility - same random numbers each time
+n_components = whitened_data.shape[1]                       # Number of components to extract
+W = np.random.randn(n_components, n_components)
+
+
+#Step 8: Orthonormalize the initial weights using QR decomposition
+         #This ensures the weights are orthogonal and normalized
+
+W, _ = np.linalg.qr(W) #linalg is NumPy's linear algebra module.
+
+#STEP 9: ICA Iteration Loop ---
+max_iterations = 1000
+tolerance = 1e-6
+learning_rate = 0.1
+
+for iteration in range(max_iterations):
+    W_old = W.copy()
+
+    # Compute estimated sources
+    s = whitened_data @ W.T
+
+    # Apply non-linearity (contrast function)
+    g_s = np.tanh(s)
+    g_s_derivative = 1 - np.tanh(s)**2  # derivative of tanh(s)
+
+    # Update rule for W (FastICA style)
+    W += learning_rate * ((whitened_data.T @ g_s) / len(whitened_data) -
+                          np.diag(g_s_derivative.mean(axis=0)) @ W)
+
+    # Re-orthonormalize W
+    W, _ = np.linalg.qr(W)
+
+    # Check convergence
+    if np.max(np.abs(W - W_old)) < tolerance:
+        print(f"Converged after {iteration+1} iterations.")
+        break
+else:
+    print("Did not converge within max iterations.")
+
+# --- STEP 10: Compute independent components and mixing matrix ---
+independent_components = whitened_data @ W.T
+A_estimated = np.linalg.inv(W)
+
+#####################################################################################
+
+print("\n" + "="*50)
+print("STEP 1: CENTERING THE DATA")
+print("="*50)
+print("Mean of each column:", mean)
+print("Centered Data (X - mean):")
+print(centered_data)
+
+print("\n" + "="*50)
+print("STEP 2: COVARIANCE MATRIX")
+print("="*50)
+print("Covariance Matrix:")
+print(cov_matrix)
+
+print("\n" + "="*50)
+print("STEP 3: EIGEN DECOMPOSITION")
+print("="*50)
+print("Eigenvalues:")
+print(eigenvalues)
+print("Eigenvectors:")
+print(eigenvectors)
+
+print("\n" + "="*50)
+print("STEP 4: ADD EPSILON FOR SAFETY")
+print("="*50)
+print("Eigenvalues after adding epsilon:")
+print(eigenvalues_safe)
+
+print("\n" + "="*50)
+print("STEP 5: WHITENING THE DATA")
+print("="*50)
+print("Whitening Matrix:")
+print(whitening_matrix)
+print("Whitened Data:")
+print(whitened_data)
+
+print("\n" + "="*50)
+print("STEP 6 & 7: INITIALIZE RANDOM WEIGHTS")
+print("="*50)
+print("Initial Random Weight Matrix (Before QR):")
+print(W)
+
+print("\n" + "="*50)
+print("STEP 8: ORTHONORMALIZE INITIAL WEIGHTS (QR DECOMPOSITION)")
+print("="*50)
+print("Weight Matrix after QR:")
+print(W)
+
+print("\n" + "="*50)
+print("STEP 9: ICA ITERATION LOOP")
+print("="*50)
+
+print("\n" + "="*50)
+print("STEP 10: COMPUTE INDEPENDENT COMPONENTS AND MIXING MATRIX")
+print("="*50)
+print("Independent Components:")
+print(independent_components)
+print("Estimated Mixing Matrix (A):")
+print(A_estimated)
+
+
